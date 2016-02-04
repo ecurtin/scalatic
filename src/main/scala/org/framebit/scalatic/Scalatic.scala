@@ -1,17 +1,20 @@
+package org.framebit.scalatic
+
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path, Paths, StandardCopyOption}
 
+import org.joda.time.LocalDateTime
+
 import scala.collection.JavaConverters._
 import scala.language.implicitConversions
-
-import org.joda.time.LocalDateTime
-import org.joda.time.format.{DateTimeFormat, ISODateTimeFormat}
 import scalaj.http.{Http, HttpOptions}
+
+import org.framebit.scalatic.FileIO._
+import org.framebit.scalatic.Arguments._
+import org.framebit.scalatic.PostSummary._
 
 object Scalatic extends App {
   val GHMDRendererUrl = "https://api.github.com/markdown/raw"
-  val defaultSource = "source"
-  val defaultTarget = "target"
 
   val options = validateArgs(args).orElse {
     println(
@@ -56,35 +59,12 @@ object Scalatic extends App {
       excludeFiles = Set("header.html", "footer.html"))
   }
 
-  class Tabs(n: Int) extends {
-    val tab="  "
-    def tabs =
-      (for (i <- 1 to n) yield tab).mkString
-  }
-  implicit def tabs(value: Int): Tabs = new Tabs(value)
-
-  case class PostSummary(url: String, title: String, date: LocalDateTime)
-    extends Ordered[PostSummary] {
-    override def compare(that: PostSummary): Int = that.date.compareTo(this.date)
-  }
-  object PostSummary {
-    val df = DateTimeFormat.shortDateTime()
-    val dfIso = ISODateTimeFormat.dateTimeNoMillis()
-
-    def toLink(ps: PostSummary): String = {
-      s"${2.tabs}<article>\n${3.tabs}<header>\n" +
-        s"${4.tabs}<a href='${ps.url}' class='blog-index-link'>${ps.title}</a>\n" +
-        s"${4.tabs}<time pubdate datetime='${dfIso.print(ps.date)}' class='blog-index-date'>" +
-        s"${df.print(ps.date)}</time>\n${3.tabs}</header>\n${2.tabs}</article>"
-    }
-  }
 
   def generateIndex(
       sourcePostsPath: String,
       targetPath: String,
       header: String,
       footer: String) = {
-    import Scalatic.PostSummary._
 
     val linksToPosts = for (
       srcFile <- Files.newDirectoryStream(Paths.get(sourcePostsPath)).asScala
@@ -157,17 +137,7 @@ object Scalatic extends App {
     }
   }
 
-  private def moveFile(srcFile: Path, destFile: Path) = {
-    println(s"Moving ${srcFile.toString } to ${destFile.toString} ...")
-    Files.move(srcFile, destFile, StandardCopyOption.REPLACE_EXISTING)
-  }
 
-  private def writeFile(fileContent: String, filePath: String): Path = {
-    println(s"Writing $filePath ...")
-    Files.write(
-      Paths.get(filePath),
-      fileContent.getBytes(StandardCharsets.UTF_8))
-  }
 
   private def render(file: Path, header: String, footer: String): String = {
     val srcFilePath: String = file.toString
@@ -183,62 +153,6 @@ object Scalatic extends App {
     htmlFull
   }
 
-  private def requireFile(pathToFile: String, mustBeFolder: Boolean) = {
-    val requiredFile = Paths.get(pathToFile)
-    val isFolder = Files.isDirectory(requiredFile)
-    val folderOrFile = if (mustBeFolder) "folder" else "file"
-    require(
-      Files.exists(requiredFile) && (if (mustBeFolder) isFolder else !isFolder),
-      s"$pathToFile does not exist or is not a $folderOrFile")
-  }
 
-  private def createFolderIfNotExists(pathToFolder: String) = {
-    val folder = Paths.get(pathToFolder)
-    if (Files.notExists(folder) || !Files.isDirectory(folder))
-      Files.createDirectory(folder)
-  }
 
-  private def validateArgs(scalaticArgs: Array[String])
-  : Option[(String,String,String)] =
-    scalaticArgs match {
-      case Array(aPath) =>
-        Some((noEndSlash(aPath), defaultSource, defaultTarget))
-      case Array(aPath, aSource) =>
-        Some((noEndSlash(aPath), noEndSlash(aSource), defaultTarget))
-      case Array(aPath, aSource, aTarget, _*) =>
-        Some((noEndSlash(aPath), noEndSlash(aSource), noEndSlash(aTarget)))
-      case _ =>
-        None
-    }
-
-  private def noEndSlash(str: String) = {
-    if(str.endsWith("/") || str.endsWith("\\")) {
-      str.dropRight(1)
-    } else {
-      str
-    }
-  }
-
-  private def copyFiles(
-    srcFolderPath: String,
-    destFolderPath: String,
-    excludeFiles: Set[String]) = {
-    val srcFolder = Paths.get(srcFolderPath)
-    for (
-      file <- Files.newDirectoryStream(srcFolder).asScala
-      if !excludeFiles(file.getFileName.toString) && !Files.isDirectory(file)
-    ) {
-      val destFile = Paths.get(s"$destFolderPath/${file.getFileName.toString}")
-      println(s"Copying ${file.toString} to ${destFile.toString} ...")
-      Files.copy(
-        file,
-        destFile,
-        StandardCopyOption.REPLACE_EXISTING)
-    }
-  }
-
-  def stringFromFile(filePath: String): String = {
-    val source = io.Source.fromFile(filePath)
-    try source.getLines mkString "\n" finally source.close()
-  }
 }
